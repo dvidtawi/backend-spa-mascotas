@@ -158,7 +158,9 @@ exports.verifyEmail = async (req, res) => {
             password_hash: hashed,
             nombre,
             telefono,
-            rol_id: 4 // cliente
+            rol_id: 4,
+            primer_inicio: false,
+            email_verificado: true
         });
 
         await PasswordHistory.save(
@@ -337,7 +339,8 @@ exports.login = async (req, res) => {
 
         res.json({
             accessToken,
-            refreshToken
+            refreshToken,
+            primer_inicio: user.primer_inicio
         });
 
     } catch (err) {
@@ -672,7 +675,14 @@ exports.changePassword = async (req, res) => {
             `,
             [hash, user.id]
         );
-
+        await db.query(
+            `
+            UPDATE usuarios
+            SET primer_inicio=false
+            WHERE id=$1
+            `,
+            [user.id]
+        );
         await PasswordHistory.save(
             user.id,
             hash

@@ -1,11 +1,31 @@
 const User = require('../models/User');
 const db = require('../config/database');
 
+const {
+    hashPassword
+} = require('../utils/passwordUtils');
+
+const {
+    sendEmail
+} = require('../services/emailService');
+
+const {
+    logEvent
+} = require('../services/auditService');
+
+const crypto = require('crypto');
+
+
+// ===============================
+// GET USERS
+// ===============================
+
 exports.getUsers = async (req, res) => {
 
     try {
 
-        const users = await User.findAll();
+        const users =
+            await User.getAll();
 
         res.json(users);
 
@@ -17,59 +37,81 @@ exports.getUsers = async (req, res) => {
     }
 };
 
-exports.deactivateUser = async (req, res) => {
+
+// ===============================
+// CREATE USER
+// ===============================
+
+exports.createUser = async (req, res) => {
 
     try {
 
-        await User.updateStatus(
-            req.params.id,
-            false
+        const {
+            email,
+            nombre,
+            telefono,
+            rol_id
+        } = req.body;
+
+        const existing =
+            await User.findByEmail(email);
+
+        if (existing) {
+
+            return res.status(400).json({
+                message:
+                    'Usuario ya existe'
+            });
+        }
+
+        // password temporal
+        const tempPassword =
+            crypto.randomBytes(4)
+            .toString('hex') + 'A!1';
+
+        const hash =
+            await hashPassword(
+                tempPassword
+            );
+
+        const user =
+            await User.create({
+
+                email,
+                password_hash: hash,
+                nombre,
+                telefono,
+                rol_id,
+
+                primer_inicio: true,
+
+                email_verificado: true
+            });
+
+        await sendEmail(
+            email,
+            'Cuenta creada',
+            `
+            Tu cuenta fue creada.
+
+            Password temporal:
+            ${tempPassword}
+
+            Debes cambiarla
+            en tu primer inicio.
+            `
         );
 
-        res.json({
-            message: 'Usuario desactivado'
-        });
-
-    } catch (err) {
-
-        res.status(500).json({
-            error: err.message
-        });
-    }
-};
-
-exports.activateUser = async (req, res) => {
-
-    try {
-
-        await User.updateStatus(
-            req.params.id,
-            true
-        );
-
-        res.json({
-            message: 'Usuario activado'
-        });
-
-    } catch (err) {
-
-        res.status(500).json({
-            error: err.message
-        });
-    }
-};
-
-exports.forcePasswordChange = async (req, res) => {
-
-    try {
-
-        await User.forcePasswordChange(
-            req.params.id
+        await logEvent(
+            req,
+            'ADMIN_CREATE_USER',
+            'Admin creó usuario',
+            user
         );
 
         res.json({
             message:
-                'Cambio de contraseña forzado'
+                'Usuario creado correctamente'
         });
 
     } catch (err) {
@@ -80,6 +122,103 @@ exports.forcePasswordChange = async (req, res) => {
     }
 };
 
+
+// ===============================
+// UPDATE USER
+// ===============================
+
+exports.updateUser = async (req, res) => {
+
+    try {
+
+        const { id } = req.params;
+
+        const {
+            nombre,
+            telefono,
+            rol_id
+        } = req.body;
+
+        await db.query(
+            `
+            UPDATE usuarios
+            SET
+                nombre=$1,
+                telefono=$2,
+                rol_id=$3
+            WHERE id=$4
+            `,
+            [
+                nombre,
+                telefono,
+                rol_id,
+                id
+            ]
+        );
+
+        await logEvent(
+            req,
+            'ADMIN_UPDATE_USER',
+            'Admin actualizó usuario'
+        );
+
+        res.json({
+            message:
+                'Usuario actualizado'
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
+        });
+    }
+};
+
+
+// ===============================
+// ACTIVATE / DEACTIVATE
+// ===============================
+
+exports.toggleUser = async (req, res) => {
+
+    try {
+
+        const { id } = req.params;
+
+        const user =
+            await User.findById(id);
+
+        const newState =
+            !user.estado_activo;
+
+        await db.query(
+            `
+            UPDATE usuarios
+            SET estado_activo=$1
+            WHERE id=$2
+            `,
+            [newState, id]
+        );
+
+        await logEvent(
+            req,
+            'ADMIN_TOGGLE_USER',
+            'Admin activó/desactivó usuario'
+        );
+
+        res.json({
+            message:
+                'Estado actualizado'
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
+        });
+    }
+};
 exports.auditLogs = async (req, res) => {
 
     try {

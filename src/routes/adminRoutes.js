@@ -2,7 +2,7 @@ const express = require('express');
 
 const router = express.Router();
 
-const adminController =
+const admin =
     require('../controllers/adminController');
 
 const auth =
@@ -16,27 +16,29 @@ router.use(role(1));
 
 router.get(
     '/users',
-    adminController.getUsers
+    admin.getUsers
+);
+
+router.post(
+    '/users',
+    admin.createUser
 );
 
 router.put(
-    '/users/:id/deactivate',
-    adminController.deactivateUser
+    '/users/:id',
+    admin.updateUser
 );
 
-router.put(
-    '/users/:id/activate',
-    adminController.activateUser
+router.patch(
+    '/users/:id/toggle',
+    admin.toggleUser
 );
 
-router.put(
-    '/users/:id/force-password-change',
-    adminController.forcePasswordChange
-);
+
 
 router.get(
     '/audit-logs',
-    adminController.auditLogs
+    admin.auditLogs
 );
 
 module.exports = router;
