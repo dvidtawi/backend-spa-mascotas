@@ -1,14 +1,12 @@
 const jwt = require('jsonwebtoken');
 
-exports.generateAccessToken = (
-    user,
-    sessionId
-) => {
+const generateAccessToken = (user, sessionId) => {
 
     return jwt.sign(
         {
             id: user.id,
-            rol_id: user.rol_id,
+            email: user.email,
+            rol: user.rol_id,
             session_id: sessionId
         },
         process.env.JWT_SECRET,
@@ -18,10 +16,7 @@ exports.generateAccessToken = (
     );
 };
 
-exports.generateRefreshToken = (
-    user,
-    sessionId
-) => {
+const generateRefreshToken = (user, sessionId) => {
 
     return jwt.sign(
         {
@@ -33,4 +28,9 @@ exports.generateRefreshToken = (
             expiresIn: '7d'
         }
     );
+};
+
+module.exports = {
+    generateAccessToken,
+    generateRefreshToken
 };

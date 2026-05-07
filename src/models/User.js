@@ -32,7 +32,48 @@ const User = {
             [id]
         );
         return result.rows[0];
-    }
+    },
+    findAll: async () => {
+
+        const result = await db.query(`
+            SELECT
+                u.id,
+                u.email,
+                u.nombre,
+                u.telefono,
+                u.estado_activo,
+                u.primer_inicio,
+                u.created_at,
+                r.nombre as rol
+            FROM usuarios u
+            JOIN roles r ON r.id = u.rol_id
+            ORDER BY created_at DESC
+        `);
+
+        return result.rows;
+    },
+    updateStatus: async (id, estado) => {
+
+        await db.query(
+            `
+            UPDATE usuarios
+            SET estado_activo=$1
+            WHERE id=$2
+            `,
+            [estado, id]
+        );
+    },
+    forcePasswordChange: async (id) => {
+
+        await db.query(
+            `
+            UPDATE usuarios
+            SET primer_inicio=true
+            WHERE id=$1
+            `,
+            [id]
+        );
+    },
 };
 
 module.exports = User;

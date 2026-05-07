@@ -23,5 +23,10 @@ app.listen(PORT, () => {
 });
 
 const authRoutes = require('./routes/authRoutes');
+const limiter = require('./middlewares/rateLimit');
+const adminRoutes =
+    require('./routes/adminRoutes');
 
+app.use('/api/admin', adminRoutes);
+app.use(limiter);
 app.use('/api/auth', authRoutes);
