@@ -280,27 +280,53 @@ exports.login = async (req, res) => {
             });
         }
 
+                // crear sesión
+        const sessionResult = await db.query(
+            `
+            INSERT INTO user_sessions (
+                usuario_id,
+                ip_address,
+                user_agent,
+                expires_at
+            )
+            VALUES ($1,$2,$3,$4)
+            RETURNING *
+            `,
+            [
+                user.id,
+                req.ip,
+                req.headers['user-agent'],
+                new Date(
+                    Date.now() +
+                    7 * 24 * 60 * 60 * 1000
+                )
+            ]
+        );
+
+        const session = sessionResult.rows[0];
+
+        // generar tokens ligados a ESTA sesión
         const accessToken =
-            generateAccessToken(user);
+            generateAccessToken(
+                user,
+                session.id
+            );
 
         const refreshToken =
-            generateRefreshToken(user);
+            generateRefreshToken(
+                user,
+                session.id
+            );
+
+        // guardar refresh token
         await db.query(
-            `DELETE FROM user_sessions
-            WHERE usuario_id = $1`,
-            [user.id]
+            `
+            UPDATE user_sessions
+            SET refresh_token=$1
+            WHERE id=$2
+            `,
+            [refreshToken, session.id]
         );
-        await UserSession.create({
-            usuario_id: user.id,
-            refresh_token: refreshToken,
-            ip_address: req.ip,
-            user_agent:
-                req.headers['user-agent'],
-            expires_at: new Date(
-                Date.now() +
-                7 * 24 * 60 * 60 * 1000
-            )
-        });
         
         await logEvent(
             req,
