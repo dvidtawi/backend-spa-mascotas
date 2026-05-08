@@ -19,4 +19,21 @@ router.post(
     authMiddleware,
     auth.logoutAll
 );
+router.post(
+    '/setup-2fa',
+    authMiddleware,
+    auth.setup2FA
+);
+
+router.post(
+    '/verify-2fa',
+    authMiddleware,
+    auth.verify2FASetup
+);
+
+router.post(
+    '/disable-2fa',
+    authMiddleware,
+    auth.disable2FA
+);
 module.exports = router;

@@ -55,6 +55,37 @@ const User = {
 
         return result.rows[0];
     },
+    
+    enable2FA: async (userId, secret) => {
+
+        const result = await db.query(
+            `
+            UPDATE usuarios
+            SET
+                two_factor_enabled=true,
+                two_factor_secret=$1
+            WHERE id=$2
+            RETURNING *
+            `,
+            [secret, userId]
+        );
+
+        return result.rows[0];
+    },
+
+    disable2FA: async (userId) => {
+
+        await db.query(
+            `
+            UPDATE usuarios
+            SET
+                two_factor_enabled=false,
+                two_factor_secret=NULL
+            WHERE id=$1
+            `,
+            [userId]
+        );
+    },
 
     getAll: async () => {
 

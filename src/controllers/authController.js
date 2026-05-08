@@ -17,7 +17,8 @@ const {
 
 const { sendEmail } = require('../services/emailService');
 const { logEvent } = require('../services/auditService');
-
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 const jwt = require('jsonwebtoken');
 
 const generateCode = () =>
@@ -280,6 +281,53 @@ exports.login = async (req, res) => {
                 message:
                     'Credenciales inválidas'
             });
+        }
+        // ===============================
+        // 2FA ADMIN
+        // ===============================
+
+        if (
+            user.two_factor_enabled &&
+            user.rol_id === 1
+        ) {
+
+            const { twoFactorCode } =
+                req.body;
+
+            if (!twoFactorCode) {
+
+                return res.status(401).json({
+                    requires2FA: true,
+                    message:
+                        'Código 2FA requerido'
+                });
+            }
+
+            const verified =
+                speakeasy.totp.verify({
+
+                    secret:
+                        user.two_factor_secret,
+
+                    encoding: 'base32',
+
+                    token: twoFactorCode
+                });
+
+            if (!verified) {
+
+                await logEvent(
+                    req,
+                    '2FA_FAILED',
+                    'Código 2FA inválido',
+                    user
+                );
+
+                return res.status(401).json({
+                    message:
+                        'Código 2FA inválido'
+                });
+            }
         }
 
                 // crear sesión
@@ -843,6 +891,174 @@ exports.logoutAll = async (req, res) => {
         res.json({
             message:
                 'Todas las sesiones cerradas'
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
+        });
+    }
+};
+
+// ===============================
+// SETUP 2FA
+// ===============================
+
+exports.setup2FA = async (req, res) => {
+
+    try {
+
+        const user =
+            await User.findById(req.user.id);
+
+        // solo admin
+        if (user.rol_id !== 1) {
+
+            return res.status(403).json({
+                message:
+                    'Solo admins pueden activar 2FA'
+            });
+        }
+
+        const secret =
+            speakeasy.generateSecret({
+
+                name:
+                    `PetSpa (${user.email})`
+            });
+
+        // guardar secret temporalmente
+        await db.query(
+            `
+            UPDATE usuarios
+            SET two_factor_secret=$1
+            WHERE id=$2
+            `,
+            [
+                secret.base32,
+                user.id
+            ]
+        );
+
+        const qrCode =
+            await QRCode.toDataURL(
+                secret.otpauth_url
+            );
+
+        await logEvent(
+            req,
+            '2FA_SETUP',
+            'Configuración 2FA iniciada',
+            user
+        );
+
+        res.json({
+
+            qrCode,
+
+            manualCode:
+                secret.base32
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
+        });
+    }
+};
+
+// ===============================
+// VERIFY 2FA SETUP
+// ===============================
+
+exports.verify2FASetup = async (req, res) => {
+
+    try {
+
+        const { token } = req.body;
+
+        const user =
+            await User.findById(
+                req.user.id
+            );
+
+        const verified =
+            speakeasy.totp.verify({
+
+                secret:
+                    user.two_factor_secret,
+
+                encoding: 'base32',
+
+                token
+            });
+
+        if (!verified) {
+
+            return res.status(400).json({
+                message:
+                    'Código inválido'
+            });
+        }
+
+        await db.query(
+            `
+            UPDATE usuarios
+            SET two_factor_enabled=true
+            WHERE id=$1
+            `,
+            [user.id]
+        );
+
+        await logEvent(
+            req,
+            '2FA_ENABLED',
+            '2FA activado',
+            user
+        );
+
+        res.json({
+            message:
+                '2FA activado correctamente'
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
+        });
+    }
+};
+
+// ===============================
+// DISABLE 2FA
+// ===============================
+
+exports.disable2FA = async (req, res) => {
+
+    try {
+
+        const user =
+            await User.findById(
+                req.user.id
+            );
+
+        await User.disable2FA(
+            user.id
+        );
+
+        await logEvent(
+            req,
+            '2FA_DISABLED',
+            '2FA desactivado',
+            user
+        );
+
+        res.json({
+            message:
+                '2FA desactivado'
         });
 
     } catch (err) {
