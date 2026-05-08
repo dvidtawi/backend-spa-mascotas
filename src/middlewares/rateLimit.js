@@ -1,9 +1,37 @@
-const rateLimit = require('express-rate-limit');
+const rateLimit =
+    require('express-rate-limit');
 
-const limiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 100,
-    message: 'Demasiadas peticiones, intenta más tarde'
-});
+const globalLimiter =
+    rateLimit({
 
-module.exports = limiter;
+        windowMs:
+            15 * 60 * 1000,
+
+        max: 100,
+
+        message: {
+            message:
+                'Demasiadas solicitudes'
+        },
+
+        standardHeaders: true,
+
+        legacyHeaders: false
+    });
+const loginLimiter =
+    rateLimit({
+
+        windowMs:
+            15 * 60 * 1000,
+
+        max: 5,
+
+        message: {
+            message:
+                'Demasiados intentos login'
+        }
+    });
+module.exports = {
+    globalLimiter,
+    loginLimiter
+};

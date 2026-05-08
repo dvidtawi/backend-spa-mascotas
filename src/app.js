@@ -2,7 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 require('dotenv').config();
-
+const {
+    globalLimiter
+} = require('./middlewares/rateLimit');
 const app = express();
 
 // Middlewares
@@ -26,7 +28,11 @@ const authRoutes = require('./routes/authRoutes');
 const limiter = require('./middlewares/rateLimit');
 const adminRoutes =
     require('./routes/adminRoutes');
+const {
+    startSessionCleanup
+} = require('./services/sessionCleanupService');
 
 app.use('/api/admin', adminRoutes);
-app.use(limiter);
+app.use(globalLimiter);
 app.use('/api/auth', authRoutes);
+startSessionCleanup();
