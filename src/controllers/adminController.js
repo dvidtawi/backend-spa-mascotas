@@ -106,7 +106,12 @@ exports.createUser = async (req, res) => {
             req,
             'ADMIN_CREATE_USER',
             'Admin creó usuario',
-            user
+            req.user,
+            {
+                usuario_creado_id: user.id,
+                usuario_creado_email: user.email,
+                rol_id: user.rol_id
+            }
         );
 
         res.json({
@@ -159,7 +164,16 @@ exports.updateUser = async (req, res) => {
         await logEvent(
             req,
             'ADMIN_UPDATE_USER',
-            'Admin actualizó usuario'
+            'Admin actualizó usuario',
+            req.user,
+            {
+                usuario_afectado_id: id,
+                nuevos_datos: {
+                    nombre,
+                    telefono,
+                    rol_id
+                }
+            }
         );
 
         res.json({
@@ -204,7 +218,12 @@ exports.toggleUser = async (req, res) => {
         await logEvent(
             req,
             'ADMIN_TOGGLE_USER',
-            'Admin activó/desactivó usuario'
+            `Admin ${newState ? 'activó' : 'desactivó'} usuario`,
+            req.user,
+            {
+                usuario_afectado_id: id,
+                nuevo_estado: newState
+            }
         );
 
         res.json({

@@ -370,9 +370,6 @@ exports.logout = async (req, res) => {
             });
         }
 
-        const db =
-            require('../config/database');
-
         const result = await db.query(
             `
             DELETE FROM user_sessions
@@ -390,10 +387,21 @@ exports.logout = async (req, res) => {
             });
         }
 
+        // sesión eliminada
+        const deletedSession =
+            result.rows[0];
+
+        // buscar usuario dueño
+        const user =
+            await User.findById(
+                deletedSession.usuario_id
+            );
+
         await logEvent(
             req,
             'LOGOUT',
-            'Sesión cerrada'
+            'Sesión cerrada',
+            user
         );
 
         res.json({
@@ -727,16 +735,15 @@ exports.refreshToken = async (req, res) => {
             });
         }
 
-        const db =
-            require('../config/database');
-
-        const sessionResult = await db.query(
-            `
-            SELECT * FROM user_sessions
-            WHERE refresh_token=$1
-            `,
-            [refreshToken]
-        );
+        // verificar sesión
+        const sessionResult =
+            await db.query(
+                `
+                SELECT * FROM user_sessions
+                WHERE refresh_token=$1
+                `,
+                [refreshToken]
+            );
 
         const session =
             sessionResult.rows[0];
@@ -749,19 +756,58 @@ exports.refreshToken = async (req, res) => {
             });
         }
 
-        const decoded = jwt.verify(
-            refreshToken,
-            process.env.JWT_REFRESH_SECRET
-        );
+        // verificar JWT
+        const decoded =
+            jwt.verify(
+                refreshToken,
+                process.env.JWT_REFRESH_SECRET
+            );
 
         const user =
-            await User.findById(decoded.id);
+            await User.findById(
+                decoded.id
+            );
 
+        // NUEVOS TOKENS
         const newAccessToken =
-            generateAccessToken(user);
+            generateAccessToken(
+                user,
+                session.id
+            );
+
+        const newRefreshToken =
+            generateRefreshToken(
+                user,
+                session.id
+            );
+
+        // reemplazar refresh viejo
+        await db.query(
+            `
+            UPDATE user_sessions
+            SET refresh_token=$1
+            WHERE id=$2
+            `,
+            [
+                newRefreshToken,
+                session.id
+            ]
+        );
+
+        await logEvent( 
+            req,
+            'TOKEN_REFRESH',
+            'Refresh token rotado',
+            user
+        );
 
         res.json({
-            accessToken: newAccessToken
+
+            accessToken:
+                newAccessToken,
+
+            refreshToken:
+                newRefreshToken
         });
 
     } catch (err) {
@@ -769,6 +815,40 @@ exports.refreshToken = async (req, res) => {
         return res.status(403).json({
             message:
                 'Refresh token expirado'
+        });
+    }
+};
+exports.logoutAll = async (req, res) => {
+
+    try {
+
+        await db.query(
+            `
+            DELETE FROM user_sessions
+            WHERE usuario_id=$1
+            `,
+            [req.user.id]
+        );
+
+        const user =
+            await User.findById(req.user.id);
+
+        await logEvent(
+            req,
+            'LOGOUT_ALL',
+            'Todas las sesiones cerradas',
+            user
+        );
+
+        res.json({
+            message:
+                'Todas las sesiones cerradas'
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
         });
     }
 };
