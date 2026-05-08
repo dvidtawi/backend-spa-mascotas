@@ -11,6 +11,7 @@ const startSessionCleanup = () => {
             const result = await db.query(`
                 DELETE FROM user_sessions
                 WHERE expires_at < NOW()
+                OR last_activity < NOW() - INTERVAL '5 minutes'
             `);
 
             console.log(

@@ -370,9 +370,6 @@ exports.logout = async (req, res) => {
             });
         }
 
-        const db =
-            require('../config/database');
-
         const result = await db.query(
             `
             DELETE FROM user_sessions
@@ -390,10 +387,21 @@ exports.logout = async (req, res) => {
             });
         }
 
+        // sesión eliminada
+        const deletedSession =
+            result.rows[0];
+
+        // buscar usuario dueño
+        const user =
+            await User.findById(
+                deletedSession.usuario_id
+            );
+
         await logEvent(
             req,
             'LOGOUT',
-            'Sesión cerrada'
+            'Sesión cerrada',
+            user
         );
 
         res.json({
@@ -786,7 +794,7 @@ exports.refreshToken = async (req, res) => {
             ]
         );
 
-        await logEvent(
+        await logEvent( 
             req,
             'TOKEN_REFRESH',
             'Refresh token rotado',
@@ -822,10 +830,14 @@ exports.logoutAll = async (req, res) => {
             [req.user.id]
         );
 
+        const user =
+            await User.findById(req.user.id);
+
         await logEvent(
             req,
             'LOGOUT_ALL',
-            'Todas las sesiones cerradas'
+            'Todas las sesiones cerradas',
+            user
         );
 
         res.json({
