@@ -1006,7 +1006,8 @@ exports.verify2FASetup = async (req, res) => {
         await db.query(
             `
             UPDATE usuarios
-            SET two_factor_enabled=true
+            SET two_factor_enabled=true,
+                primer_inicio=false
             WHERE id=$1
             `,
             [user.id]

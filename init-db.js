@@ -27,6 +27,8 @@ async function initDB() {
                 estado_activo BOOLEAN DEFAULT true,
                 primer_inicio BOOLEAN DEFAULT true,
                 email_verificado BOOLEAN DEFAULT false,
+                two_factor_enabled BOOLEAN DEFAULT false,
+                two_factor_secret VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
