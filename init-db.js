@@ -94,7 +94,7 @@ async function initDB() {
             ON CONFLICT (nombre) DO NOTHING;
         `);
 
-        // ADMIN
+        // ADMIN PRINCIPAL
         const adminEmail = 'admindavid@petters.com';
         const existing = await pool.query(
             `SELECT * FROM usuarios WHERE email = $1`,
@@ -110,9 +110,13 @@ async function initDB() {
                     password_hash,
                     nombre,
                     rol_id,
-                    email_verificado
+                    email_verificado,
+                    primer_inicio,
+                    estado_activo,
+                    two_factor_enabled,
+                    two_factor_secret
                 )
-                VALUES ($1, $2, $3, 1, true)
+                VALUES ($1, $2, $3, 1, true, true, true, false, NULL)
                 RETURNING *;
             `, [adminEmail, hash, 'Administrador']);
 
@@ -127,6 +131,61 @@ async function initDB() {
             console.log('🔑 Password: Admin123!');
         } else {
             console.log('⚠️ Admin ya existe');
+        }
+
+        // ADMINS DE PRUEBA
+        const testAdmins = [
+            { email: 'admin.prueba1@petters.com', password: 'AdminPrueba1!', nombre: 'Admin Prueba 1' },
+            { email: 'admin.prueba2@petters.com', password: 'AdminPrueba2!', nombre: 'Admin Prueba 2' },
+            { email: 'admin.prueba3@petters.com', password: 'AdminPrueba3!', nombre: 'Admin Prueba 3' },
+            { email: 'admin.prueba4@petters.com', password: 'AdminPrueba4!', nombre: 'Admin Prueba 4' },
+            { email: 'admin.prueba5@petters.com', password: 'AdminPrueba5!', nombre: 'Admin Prueba 5' }
+        ];
+
+        for (const testAdmin of testAdmins) {
+            const exists = await pool.query(
+                `SELECT * FROM usuarios WHERE email = $1`,
+                [testAdmin.email]
+            );
+
+            if (exists.rows.length === 0) {
+                const hash = await bcrypt.hash(testAdmin.password, 12);
+
+                const adminResult = await pool.query(`
+                    INSERT INTO usuarios (
+                        email,
+                        password_hash,
+                        nombre,
+                        telefono,
+                        rol_id,
+                        estado_activo,
+                        primer_inicio,
+                        email_verificado,
+                        two_factor_enabled,
+                        two_factor_secret
+                    )
+                    VALUES ($1, $2, $3, $4, 1, true, true, true, false, NULL)
+                    RETURNING *;
+                `, [
+                    testAdmin.email,
+                    hash,
+                    testAdmin.nombre,
+                    '+34123456789'
+                ]);
+
+                const admin = adminResult.rows[0];
+
+                await pool.query(`
+                    INSERT INTO password_history (usuario_id, password_hash)
+                    VALUES ($1, $2)
+                `, [admin.id, hash]);
+
+                console.log('✅ Admin de prueba creado:');
+                console.log('📧 Email:', testAdmin.email);
+                console.log('🔑 Password:', testAdmin.password);
+            } else {
+                console.log('⚠️ Admin de prueba ya existe:', testAdmin.email);
+            }
         }
 
         console.log('✅ Base de datos lista');
