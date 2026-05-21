@@ -61,7 +61,8 @@ async function initDB() {
                 refresh_token TEXT,
                 ip_address VARCHAR(45),
                 user_agent TEXT,
-                expires_at TIMESTAMP
+                expires_at TIMESTAMP,
+                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
 
@@ -87,11 +88,153 @@ async function initDB() {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        // TABLAS DE AGENDA Y SLOTS
+        // Servicios disponibles
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS servicios (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                nombre VARCHAR(100) UNIQUE NOT NULL,
+                descripcion TEXT,
+                duracion_base INT NOT NULL,
+                precio DECIMAL(10, 2) NOT NULL,
+                estado_activo BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Características de mascotas para ajuste de duración
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS caracteristicas_mascotas (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(50) UNIQUE NOT NULL,
+                ajuste_porcentaje INT DEFAULT 0,
+                descripcion VARCHAR(200),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Mascotas (relación con clientes)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS mascotas (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                cliente_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
+                nombre VARCHAR(100) NOT NULL,
+                especie VARCHAR(50),
+                raza VARCHAR(100),
+                tamaño VARCHAR(20),
+                caracteristica_id INT REFERENCES caracteristicas_mascotas(id),
+                notas TEXT,
+                estado_activo BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Disponibilidad del spa (horarios laborales generales)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS disponibilidad_spa (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                dia_semana INT NOT NULL,
+                hora_inicio TIME NOT NULL,
+                hora_fin TIME NOT NULL,
+                capacidad_diaria INT DEFAULT 10,
+                estado_activo BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Disponibilidad de groomers
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS disponibilidad_groomer (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                groomer_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
+                dia_semana INT NOT NULL,
+                hora_inicio TIME NOT NULL,
+                hora_fin TIME NOT NULL,
+                especialidades TEXT,
+                estado_activo BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Bloqueos (feriados, mantenimiento, ausencias)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS bloqueos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                groomer_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
+                fecha_inicio DATE NOT NULL,
+                fecha_fin DATE NOT NULL,
+                tipo VARCHAR(50) NOT NULL,
+                razon VARCHAR(255),
+                created_by UUID REFERENCES usuarios(id),
+                estado_activo BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Slots/Citas
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS slots (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                cliente_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
+                groomer_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+                mascota_id UUID REFERENCES mascotas(id) ON DELETE CASCADE,
+                servicio_id UUID REFERENCES servicios(id) ON DELETE CASCADE,
+                fecha_inicio TIMESTAMP NOT NULL,
+                fecha_fin TIMESTAMP NOT NULL,
+                duracion_ajustada INT NOT NULL,
+                estado VARCHAR(50) DEFAULT 'confirmada',
+                notas TEXT,
+                precio_final DECIMAL(10, 2),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
         // ROLES
         await pool.query(`
             INSERT INTO roles (nombre)
             VALUES ('admin'), ('groomer'), ('recepcion'), ('cliente')
             ON CONFLICT (nombre) DO NOTHING;
+        `);
+
+        // DATOS DE SEMILLA - SERVICIOS
+        await pool.query(`
+            INSERT INTO servicios (nombre, descripcion, duracion_base, precio, estado_activo)
+            VALUES 
+                ('Baño rápido', 'Baño básico para mascotas', 30, 25.00, true),
+                ('Baño completo', 'Baño con secado profesional', 60, 40.00, true),
+                ('Corte y peinado', 'Corte de pelo y peinado', 90, 55.00, true),
+                ('Servicio completo', 'Baño, corte, peinado y limpieza de oídos', 120, 75.00, true)
+            ON CONFLICT (nombre) DO NOTHING;
+        `);
+
+        // DATOS DE SEMILLA - CARACTERÍSTICAS DE MASCOTAS
+        // Ahora contiene solo comportamientos/temperamento
+        // El tamaño se maneja en el campo 'tamaño' de la tabla mascotas
+        await pool.query(`
+            INSERT INTO caracteristicas_mascotas (nombre, ajuste_porcentaje, descripcion)
+            VALUES 
+                ('Nerviosa', 20, 'Mascotas nerviosas - tiempo adicional'),
+                ('Agresiva', 25, 'Mascotas agresivas - tiempo adicional y precauciones')
+            ON CONFLICT (nombre) DO NOTHING;
+        `);
+
+        // DATOS DE SEMILLA - DISPONIBILIDAD DEL SPA
+        // Lunes a viernes 09:00 a 18:00, capacidad de 10 citas diarias
+        await pool.query(`
+            INSERT INTO disponibilidad_spa (dia_semana, hora_inicio, hora_fin, capacidad_diaria, estado_activo)
+            VALUES 
+                (1, '09:00', '18:00', 10, true),
+                (2, '09:00', '18:00', 10, true),
+                (3, '09:00', '18:00', 10, true),
+                (4, '09:00', '18:00', 10, true),
+                (5, '09:00', '18:00', 10, true)
+            ON CONFLICT DO NOTHING;
         `);
 
         // ADMIN PRINCIPAL

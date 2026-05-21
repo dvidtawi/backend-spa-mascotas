@@ -28,11 +28,13 @@ const authRoutes = require('./routes/authRoutes');
 const limiter = require('./middlewares/rateLimit');
 const adminRoutes =
     require('./routes/adminRoutes');
+const scheduleRoutes = require('./routes/scheduleRoutes');
 const {
     startSessionCleanup
 } = require('./services/sessionCleanupService');
 
 app.use('/api/admin', adminRoutes);
+app.use('/api/schedule', scheduleRoutes);
 app.use(globalLimiter);
 app.use('/api/auth', authRoutes);
 startSessionCleanup();
