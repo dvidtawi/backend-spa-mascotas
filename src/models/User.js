@@ -106,6 +106,32 @@ const User = {
         `);
 
         return result.rows;
+    },
+
+    getByRoleId: async (rolId) => {
+        const result = await db.query(`
+            SELECT 
+                u.id,
+                u.email,
+                u.nombre,
+                u.telefono,
+                u.estado_activo,
+                r.nombre as rol
+            FROM usuarios u
+            JOIN roles r ON r.id = u.rol_id
+            WHERE u.rol_id = $1 AND u.estado_activo = true
+            ORDER BY u.nombre ASC
+        `, [rolId]);
+
+        return result.rows;
+    },
+
+    getClientes: async () => {
+        return User.getByRoleId(4);
+    },
+
+    getGroomers: async () => {
+        return User.getByRoleId(2);
     }
 
 };

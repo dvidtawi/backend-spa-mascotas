@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const GroomerAvailability = require('../models/GroomerAvailability');
 const db = require('../config/database');
 
 const {
@@ -88,6 +89,10 @@ exports.createUser = async (req, res) => {
                 email_verificado: true
             });
 
+        if (Number(rol_id) === 2) {
+            await GroomerAvailability.ensureDefaultForGroomer(user.id);
+        }
+
         await sendEmail(
             email,
             'Cuenta creada',
@@ -160,6 +165,10 @@ exports.updateUser = async (req, res) => {
                 id
             ]
         );
+
+        if (Number(rol_id) === 2) {
+            await GroomerAvailability.ensureDefaultForGroomer(id);
+        }
 
         await logEvent(
             req,

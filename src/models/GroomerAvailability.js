@@ -1,4 +1,11 @@
 const db = require('../config/database');
+const SpaAvailability = require('./SpaAvailability');
+
+const DEFAULT_WEEKDAYS = [1, 2, 3, 4, 5];
+const DEFAULT_HOURS = {
+    hora_inicio: '09:00',
+    hora_fin: '18:00'
+};
 
 const GroomerAvailability = {
     // Crear disponibilidad de groomer
@@ -106,6 +113,36 @@ const GroomerAvailability = {
             [id]
         );
         return result.rows[0];
+    },
+
+    ensureDefaultForGroomer: async (groomerId) => {
+        const existentes = await GroomerAvailability.getByGroomerId(groomerId, true);
+        if (existentes.length > 0) {
+            return existentes;
+        }
+
+        const horarioHabitual = await SpaAvailability.getHabitual();
+        const mapaHabitual = new Map(
+            horarioHabitual
+                .filter((item) => DEFAULT_WEEKDAYS.includes(item.dia_semana))
+                .map((item) => [item.dia_semana, item])
+        );
+
+        const creados = [];
+
+        for (const dia of DEFAULT_WEEKDAYS) {
+            const base = mapaHabitual.get(dia) || DEFAULT_HOURS;
+            const creado = await GroomerAvailability.create({
+                groomer_id: groomerId,
+                dia_semana: dia,
+                hora_inicio: String(base.hora_inicio).slice(0, 5),
+                hora_fin: String(base.hora_fin).slice(0, 5),
+                estado_activo: true
+            });
+            creados.push(creado);
+        }
+
+        return creados;
     }
 };
 
