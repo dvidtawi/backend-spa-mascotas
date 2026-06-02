@@ -33,12 +33,24 @@ const limiter = require('./middlewares/rateLimit');
 const adminRoutes =
     require('./routes/adminRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const shopRoutes = require('./routes/shopRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const reportsRoutes = require('./routes/reportsRoutes');
 const {
     startSessionCleanup
 } = require('./services/sessionCleanupService');
+const {
+    startNotificationReminderScheduler
+} = require('./services/notificationReminderScheduler');
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/schedule', scheduleRoutes);
+app.use('/api/inventario', inventoryRoutes);
+app.use('/api/tienda', shopRoutes);
+app.use('/api/notificaciones', notificationRoutes);
+app.use('/api/reportes', reportsRoutes);
 app.use(globalLimiter);
 app.use('/api/auth', authRoutes);
 startSessionCleanup();
+startNotificationReminderScheduler();

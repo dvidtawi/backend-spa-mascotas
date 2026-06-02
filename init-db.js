@@ -234,6 +234,236 @@ async function initDB() {
         `);
 
         await pool.query(`
+            CREATE TABLE IF NOT EXISTS inventario (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                nombre VARCHAR(100) NOT NULL,
+                descripcion TEXT,
+                tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('insumo_tecnico', 'producto_tienda')),
+                categoria VARCHAR(50) DEFAULT 'higiene',
+                variante VARCHAR(120),
+                marca VARCHAR(120),
+                presentacion VARCHAR(120),
+                stock_actual INT NOT NULL DEFAULT 0,
+                stock_minimo INT NOT NULL DEFAULT 5,
+                precio_venta DECIMAL(10, 2) DEFAULT 0.00,
+                ruta_imagen_local VARCHAR(255),
+                estado_activo BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            ALTER TABLE inventario
+            ADD COLUMN IF NOT EXISTS categoria VARCHAR(50) DEFAULT 'higiene',
+            ADD COLUMN IF NOT EXISTS variante VARCHAR(120),
+            ADD COLUMN IF NOT EXISTS marca VARCHAR(120),
+            ADD COLUMN IF NOT EXISTS presentacion VARCHAR(120);
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS servicio_insumos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id_cita UUID REFERENCES slots(id) ON DELETE CASCADE,
+                id_insumo UUID REFERENCES inventario(id) ON DELETE RESTRICT,
+                cantidad_entregada INT NOT NULL,
+                cantidad_usada INT DEFAULT 0,
+                cantidad_devuelta INT DEFAULT 0,
+                cantidad_desperdiciada INT DEFAULT 0,
+                estado VARCHAR(20) DEFAULT 'Entregado' CHECK (estado IN ('Entregado', 'Procesado')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS tienda_promociones (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                nombre VARCHAR(120) NOT NULL,
+                descripcion TEXT,
+                tipo VARCHAR(20) NOT NULL DEFAULT 'porcentaje' CHECK (tipo IN ('porcentaje', 'combo')),
+                porcentaje_descuento DECIMAL(5,2) DEFAULT 0,
+                precio_promocional DECIMAL(10,2) DEFAULT 0,
+                productos_json JSONB DEFAULT '[]'::jsonb,
+                fecha_inicio TIMESTAMP,
+                fecha_fin TIMESTAMP,
+                stock_limite INT DEFAULT 0,
+                estado_activo BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS tienda_cupones (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                codigo VARCHAR(50) UNIQUE NOT NULL,
+                descripcion TEXT,
+                tipo_descuento VARCHAR(20) NOT NULL DEFAULT 'porcentaje' CHECK (tipo_descuento IN ('porcentaje', 'monto')),
+                valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0,
+                producto_id UUID REFERENCES inventario(id) ON DELETE SET NULL,
+                fecha_inicio TIMESTAMP,
+                fecha_fin TIMESTAMP,
+                usos_maximos INT DEFAULT 0,
+                usos_actuales INT DEFAULT 0,
+                estado_activo BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS tienda_pedidos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                cliente_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
+                subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                descuento DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                total DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                canal_salida VARCHAR(20) DEFAULT 'whatsapp',
+                estado VARCHAR(20) DEFAULT 'registrado',
+                tipo_entrega VARCHAR(20) DEFAULT 'retiro',
+                cargo_entrega DECIMAL(10, 2) DEFAULT 0,
+                direccion_entrega TEXT,
+                codigo_cupon VARCHAR(50),
+                promocion_id UUID REFERENCES tienda_promociones(id) ON DELETE SET NULL,
+                descuento_promocion DECIMAL(10, 2) DEFAULT 0,
+                descuento_lealtad DECIMAL(10, 2) DEFAULT 0,
+                descuento_cupon DECIMAL(10, 2) DEFAULT 0,
+                mensaje_compartir TEXT,
+                contacto_destino VARCHAR(255),
+                observaciones TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            ALTER TABLE tienda_pedidos
+            ADD COLUMN IF NOT EXISTS promocion_id UUID REFERENCES tienda_promociones(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS descuento_promocion DECIMAL(10, 2) DEFAULT 0;
+        `).catch(() => {});
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS tienda_pedido_items (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                pedido_id UUID REFERENCES tienda_pedidos(id) ON DELETE CASCADE,
+                inventario_id UUID REFERENCES inventario(id) ON DELETE RESTRICT,
+                nombre_producto VARCHAR(100) NOT NULL,
+                categoria VARCHAR(50),
+                variante VARCHAR(120),
+                precio_unitario DECIMAL(10, 2) NOT NULL,
+                cantidad INT NOT NULL,
+                subtotal_linea DECIMAL(10, 2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS notificaciones (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                recipient_user_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
+                recipient_role INT,
+                tipo VARCHAR(80) NOT NULL,
+                titulo VARCHAR(150) NOT NULL,
+                mensaje TEXT NOT NULL,
+                metadata JSONB DEFAULT '{}'::jsonb,
+                dedupe_key TEXT UNIQUE,
+                leido BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            ALTER TABLE notificaciones
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        `).catch(() => {});
+
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_notificaciones_recipient_user
+            ON notificaciones (recipient_user_id, leido, created_at DESC);
+        `);
+
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_notificaciones_recipient_role
+            ON notificaciones (recipient_role, leido, created_at DESC);
+        `);
+
+        await pool.query(`
+            ALTER TABLE tienda_promociones
+            ALTER COLUMN fecha_inicio TYPE TIMESTAMP USING fecha_inicio::timestamp,
+            ALTER COLUMN fecha_fin TYPE TIMESTAMP USING fecha_fin::timestamp;
+        `).catch(() => {});
+
+        await pool.query(`
+            ALTER TABLE tienda_cupones
+            ALTER COLUMN fecha_inicio TYPE TIMESTAMP USING fecha_inicio::timestamp,
+            ALTER COLUMN fecha_fin TYPE TIMESTAMP USING fecha_fin::timestamp;
+        `).catch(() => {});
+
+        await pool.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE indexname = 'servicio_insumos_cita_insumo_unique'
+                ) THEN
+                    EXECUTE 'CREATE UNIQUE INDEX servicio_insumos_cita_insumo_unique ON servicio_insumos (id_cita, id_insumo)';
+                END IF;
+            END $$;
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Shampoo neutro', 'Shampoo de uso tecnico y venta al cliente', 'producto_tienda', 'higiene', 'Neutro', 'PetSpa', '500 ml', 20, 5, 50.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Shampoo neutro');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Shampoo medicado', 'Shampoo tecnico y de venta para casos especiales', 'producto_tienda', 'salud', 'Medicado', 'PetSpa', '500 ml', 10, 3, 65.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Shampoo medicado');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Guantes desechables', 'Guantes para manipulacion e higiene', 'insumo_tecnico', 'higiene', 'Talla L', 'Genérico', 'Caja x100', 50, 10, 0.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Guantes desechables');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Toallas absorbentes', 'Toallas de secado y soporte', 'insumo_tecnico', 'higiene', 'Absorbentes', 'Genérico', 'Paquete x10', 30, 8, 0.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Toallas absorbentes');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Cepillo slicker', 'Cepillo para desenredado y acabado', 'producto_tienda', 'accesorios', 'Slicker', 'PetSpa', 'Unidad', 12, 3, 45.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Cepillo slicker');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Peine metalico', 'Peine para mantenimiento del pelaje', 'producto_tienda', 'accesorios', 'Metalico', 'PetSpa', 'Unidad', 15, 4, 25.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Peine metalico');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Perfume canino', 'Perfume para acabado final del servicio', 'producto_tienda', 'higiene', 'Fragancia suave', 'PetSpa', '125 ml', 18, 5, 30.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Perfume canino');
+        `);
+
+        await pool.query(`
+            INSERT INTO inventario (nombre, descripcion, tipo, categoria, variante, marca, presentacion, stock_actual, stock_minimo, precio_venta, ruta_imagen_local)
+            SELECT 'Correa de seguridad', 'Accesorio para manejo seguro', 'producto_tienda', 'accesorios', 'Seguridad', 'PetSpa', 'Unidad', 8, 2, 60.00, NULL
+            WHERE NOT EXISTS (SELECT 1 FROM inventario WHERE nombre = 'Correa de seguridad');
+        `);
+
+        await pool.query(`
             ALTER TABLE pagos
             ADD COLUMN IF NOT EXISTS origen VARCHAR(30) DEFAULT 'manual',
             ADD COLUMN IF NOT EXISTS tipo_movimiento VARCHAR(20) DEFAULT 'ingreso',

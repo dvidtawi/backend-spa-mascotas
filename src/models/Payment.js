@@ -60,11 +60,14 @@ const Payment = {
     getAll: async (filters = {}) => {
         let query = `
             SELECT p.*, s.fecha, s.hora_inicio, s.estado as cita_estado,
-                   c.nombre as cliente_nombre, m.nombre as mascota_nombre
+                   c.nombre as cliente_nombre, m.nombre as mascota_nombre,
+                   tp.id as pedido_id, tp.estado as pedido_estado,
+                   tp.total as pedido_total, tp.subtotal as pedido_subtotal
             FROM pagos p
             LEFT JOIN slots s ON s.id = p.cita_id
             LEFT JOIN mascotas m ON m.id = s.mascota_id
             LEFT JOIN usuarios c ON c.id = s.cliente_id
+            LEFT JOIN tienda_pedidos tp ON tp.id::text = p.referencia_evento
             WHERE 1=1
         `;
 

@@ -18,6 +18,7 @@ const globalLimiter =
 
         legacyHeaders: false
     });
+
 const loginLimiter =
     rateLimit({
 
@@ -31,7 +32,27 @@ const loginLimiter =
                 'Demasiados intentos login'
         }
     });
+
+const notificationLimiter =
+    rateLimit({
+
+        windowMs:
+            1 * 60 * 1000,
+
+        max: 60,
+
+        message: {
+            message:
+                'Demasiadas solicitudes de notificaciones'
+        },
+
+        standardHeaders: true,
+
+        legacyHeaders: false
+    });
+
 module.exports = {
     globalLimiter,
-    loginLimiter
+    loginLimiter,
+    notificationLimiter
 };

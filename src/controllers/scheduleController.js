@@ -7,6 +7,8 @@ const Block = require('../models/Block');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
 const GroomingRecord = require('../models/GroomingRecord');
+const ServiceInsumo = require('../models/ServiceInsumo');
+const db = require('../config/database');
 const DurationService = require('../services/durationService');
 const AvailabilityService = require('../services/availabilityService');
 const { appendNotification } = require('../services/notificationLogService');
@@ -15,6 +17,16 @@ const isStaffRole = (rol) => [1, 3].includes(rol);
 const GROOMING_CHECKLIST_FIELDS = ['unas', 'oidos', 'glandulas', 'corte', 'bano', 'perfume'];
 const formatDateISO = (fecha) => AvailabilityService.normalizarFechaISO(fecha);
 const HOURS_24_IN_MS = 24 * 60 * 60 * 1000;
+const buildInsumosResumen = (items = []) => items
+    .map((item) => {
+        const nombre = item.insumo_nombre || item.nombre || 'Insumo';
+        const entregado = Number(item.cantidad_entregada || 0);
+        const usado = Number(item.cantidad_usada || 0);
+        const devuelto = Number(item.cantidad_devuelta || 0);
+        const desperdiciado = Number(item.cantidad_desperdiciada || 0);
+        return `${nombre}: entregado ${entregado}, usado ${usado}, devuelto ${devuelto}, merma ${desperdiciado}`;
+    })
+    .join(' | ');
 
 const buildPaymentReference = (prefijo, citaId) => `${prefijo}:${citaId}`;
 
@@ -776,6 +788,29 @@ const ScheduleController = {
             const cita = await Slot.create(payload);
             const citaEnriquecida = await Slot.getById(cita.id);
 
+            try {
+                await appendNotification({
+                    tipo: 'solicitud_en_revision',
+                    titulo: 'Solicitud en revision',
+                    mensaje: `Tu cita para ${citaEnriquecida?.mascota_nombre || 'tu mascota'} fue enviada a revision.`,
+                    recipient_user_id: citaEnriquecida.cliente_id,
+                    recipient_role: 4,
+                    dedupe_key: `cita_revision:${citaEnriquecida.id}`,
+                    email_to: citaEnriquecida.cliente_email || null,
+                    email_subject: 'Solicitud de cita en revision',
+                    email_body: `Tu cita para ${citaEnriquecida?.mascota_nombre || 'tu mascota'} quedo en revision. Te avisaremos cuando recepcion la confirme.`,
+                    metadata: {
+                        cita_id: citaEnriquecida.id,
+                        mascota: citaEnriquecida.mascota_nombre,
+                        servicio: citaEnriquecida.servicio_nombre,
+                        fecha: citaEnriquecida.fecha,
+                        hora_inicio: citaEnriquecida.hora_inicio
+                    }
+                });
+            } catch (notificationError) {
+                console.warn('No se pudo registrar la notificacion de cita en revision:', notificationError.message);
+            }
+
             res.status(201).json({
                 success: true,
                 message: 'Cita creada exitosamente',
@@ -836,6 +871,28 @@ const ScheduleController = {
 
             if ((estado || 'confirmada') === 'confirmada') {
                 await ensureAppointmentLedgerEntry(citaEnriquecida, req.user.id, 'confirmacion');
+                try {
+                    await appendNotification({
+                        tipo: 'cita_confirmada',
+                        titulo: 'Cita confirmada',
+                        mensaje: `Tu cita para ${citaEnriquecida?.mascota_nombre || 'tu mascota'} fue confirmada por recepcion.`,
+                        recipient_user_id: citaEnriquecida.cliente_id,
+                        recipient_role: 4,
+                        dedupe_key: `cita_confirmada:${citaEnriquecida.id}`,
+                        email_to: citaEnriquecida.cliente_email || null,
+                        email_subject: 'Tu cita fue confirmada',
+                        email_body: `Tu cita para ${citaEnriquecida?.mascota_nombre || 'tu mascota'} ya fue confirmada. Fecha: ${formatDateISO(citaEnriquecida.fecha)} ${String(citaEnriquecida.hora_inicio).slice(0, 5)}.`,
+                        metadata: {
+                            cita_id: citaEnriquecida.id,
+                            mascota: citaEnriquecida.mascota_nombre,
+                            servicio: citaEnriquecida.servicio_nombre,
+                            fecha: citaEnriquecida.fecha,
+                            hora_inicio: citaEnriquecida.hora_inicio
+                        }
+                    });
+                } catch (notificationError) {
+                    console.warn('No se pudo registrar la notificacion de cita confirmada:', notificationError.message);
+                }
             }
 
             res.status(201).json({
@@ -924,10 +981,16 @@ const ScheduleController = {
             ) {
                 await appendNotification({
                     tipo: 'reprogramacion_operativa',
+                    titulo: 'Reprogramacion operativa',
                     cita_id: cita.id,
                     cliente: cita.cliente_nombre,
                     mascota: cita.mascota_nombre,
                     mensaje: 'La cita fue ajustada por cambios operativos en la agenda',
+                    recipient_user_id: cita.cliente_id,
+                    recipient_role: 4,
+                    email_to: cita.cliente_email || null,
+                    email_subject: 'Tu cita fue reprogramada',
+                    email_body: `Tu cita fue ajustada por cambios operativos en la agenda. Nueva fecha: ${formatDateISO(citaEnriquecida.fecha)} ${String(citaEnriquecida.hora_inicio).slice(0, 5)}.`,
                     cambios: {
                         groomer_anterior: cita.groomer_nombre,
                         groomer_nuevo: citaEnriquecida.groomer_nombre,
@@ -986,6 +1049,28 @@ const ScheduleController = {
 
             const citaEnriquecida = await Slot.getById(actualizada.id);
             await ensureAppointmentLedgerEntry(citaEnriquecida, req.user.id, 'confirmacion');
+            try {
+                await appendNotification({
+                    tipo: 'cita_confirmada',
+                    titulo: 'Cita confirmada',
+                    mensaje: `Recepcion confirmo la cita de ${citaEnriquecida.mascota_nombre}.`,
+                    recipient_user_id: citaEnriquecida.cliente_id,
+                    recipient_role: 4,
+                    dedupe_key: `cita_confirmada:${citaEnriquecida.id}`,
+                    email_to: citaEnriquecida.cliente_email || null,
+                    email_subject: 'Tu cita fue confirmada',
+                    email_body: `Tu cita de ${citaEnriquecida.servicio_nombre} para ${citaEnriquecida.mascota_nombre} fue confirmada para ${formatDateISO(citaEnriquecida.fecha)} a las ${String(citaEnriquecida.hora_inicio).slice(0, 5)}.`,
+                    metadata: {
+                        cita_id: citaEnriquecida.id,
+                        mascota: citaEnriquecida.mascota_nombre,
+                        servicio: citaEnriquecida.servicio_nombre,
+                        fecha: citaEnriquecida.fecha,
+                        hora_inicio: citaEnriquecida.hora_inicio
+                    }
+                });
+            } catch (notificationError) {
+                console.warn('No se pudo registrar la notificacion de confirmacion:', notificationError.message);
+            }
 
             res.json({
                 success: true,
@@ -1009,6 +1094,27 @@ const ScheduleController = {
                 notas: req.body?.razon || 'Solicitud rechazada por recepcion'
             });
 
+            try {
+                await appendNotification({
+                    tipo: 'cita_rechazada',
+                    titulo: 'Solicitud rechazada',
+                    mensaje: `Tu solicitud de cita para ${cita.mascota_nombre} fue rechazada por recepcion.`,
+                    recipient_user_id: cita.cliente_id,
+                    recipient_role: 4,
+                    dedupe_key: `cita_rechazada:${cita.id}`,
+                    email_to: cita.cliente_email || null,
+                    email_subject: 'Tu solicitud fue rechazada',
+                    email_body: `Tu solicitud para ${cita.mascota_nombre} fue rechazada. Puedes intentar con otro horario.`,
+                    metadata: {
+                        cita_id: cita.id,
+                        mascota: cita.mascota_nombre,
+                        servicio: cita.servicio_nombre
+                    }
+                });
+            } catch (notificationError) {
+                console.warn('No se pudo registrar la notificacion de rechazo:', notificationError.message);
+            }
+
             res.json({
                 success: true,
                 message: 'Cita rechazada',
@@ -1027,7 +1133,15 @@ const ScheduleController = {
             }
 
             const ficha = await GroomingRecord.getByCitaId(req.params.citaId);
-            res.json({ success: true, data: { ...cita, ficha_grooming: ficha || null } });
+            const insumosServicio = await ServiceInsumo.getByCitaId(req.params.citaId);
+            res.json({
+                success: true,
+                data: {
+                    ...cita,
+                    ficha_grooming: ficha || null,
+                    insumos_servicio: insumosServicio
+                }
+            });
         } catch (error) {
             res.status(500).json({ success: false, error: error.message });
         }
@@ -1072,6 +1186,28 @@ const ScheduleController = {
 
             if (['confirmada', 'en_proceso', 'finalizada'].includes(cita.estado)) {
                 await ensureAppointmentLedgerEntry(citaEnriquecida, req.user.id, 'reembolso');
+            }
+
+            try {
+                await appendNotification({
+                    tipo: 'cita_cancelada',
+                    titulo: 'Cita cancelada',
+                    mensaje: `La cita de ${cita.mascota_nombre} fue cancelada.`,
+                    recipient_user_id: cita.cliente_id,
+                    recipient_role: 4,
+                    dedupe_key: `cita_cancelada:${cita.id}`,
+                    email_to: cita.cliente_email || null,
+                    email_subject: 'Tu cita fue cancelada',
+                    email_body: `La cita de ${cita.mascota_nombre} fue cancelada. Si deseas reprogramarla, puedes volver a solicitar una nueva cita.`,
+                    metadata: {
+                        cita_id: cita.id,
+                        mascota: cita.mascota_nombre,
+                        servicio: cita.servicio_nombre,
+                        estado_anterior: cita.estado
+                    }
+                });
+            } catch (notificationError) {
+                console.warn('No se pudo registrar la notificacion de cancelacion:', notificationError.message);
             }
 
             res.json({
@@ -1131,6 +1267,34 @@ const ScheduleController = {
                 observaciones
             });
 
+            if (cita_id) {
+                try {
+                    const cita = await Slot.getById(cita_id);
+                    if (cita?.cliente_id) {
+                        await appendNotification({
+                            tipo: 'pago_registrado',
+                            titulo: 'Pago registrado',
+                            mensaje: `Se registro el pago de ${cita.servicio_nombre} para ${cita.mascota_nombre}.`,
+                            recipient_user_id: cita.cliente_id,
+                            recipient_role: 4,
+                            dedupe_key: `pago_registrado:${pago.id}`,
+                            email_to: cita.cliente_email || null,
+                            email_subject: 'Pago registrado',
+                            email_body: `Se registro el pago de tu cita para ${cita.mascota_nombre}. Monto: Bs ${Number(montoFinal).toFixed(2)}.`,
+                            metadata: {
+                                pago_id: pago.id,
+                                cita_id: cita.id,
+                                mascota: cita.mascota_nombre,
+                                servicio: cita.servicio_nombre,
+                                monto: Number(montoFinal)
+                            }
+                        });
+                    }
+                } catch (notificationError) {
+                    console.warn('No se pudo registrar la notificacion de pago:', notificationError.message);
+                }
+            }
+
             res.status(201).json({
                 success: true,
                 message: 'Pago registrado exitosamente',
@@ -1188,12 +1352,14 @@ const ScheduleController = {
         try {
             const cita = await validateGroomerOwnership(req.params.citaId, req.user.id);
             const ficha = await GroomingRecord.getByCitaId(req.params.citaId);
+            const insumosServicio = await ServiceInsumo.getByCitaId(req.params.citaId);
 
             res.json({
                 success: true,
                 data: {
                     cita,
                     ficha: ficha || null,
+                    insumos_servicio: insumosServicio,
                     checklist_requerido: GROOMING_CHECKLIST_FIELDS
                 }
             });
@@ -1270,6 +1436,14 @@ const ScheduleController = {
         try {
             const cita = await validateGroomerOwnership(req.params.citaId, req.user.id);
             const ficha = await GroomingRecord.getByCitaId(cita.id);
+            const insumosAsignados = await ServiceInsumo.getByCitaId(cita.id);
+
+            if (!insumosAsignados.length) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No hay insumos asignados para esta cita'
+                });
+            }
 
             if (!ficha?.estado_ingreso || !String(ficha.estado_ingreso).trim()) {
                 return res.status(400).json({ success: false, error: 'Debes registrar el estado de ingreso antes de iniciar el servicio' });
@@ -1291,16 +1465,13 @@ const ScheduleController = {
     },
 
     finalizarServicioGroomer: async (req, res) => {
+        const client = await db.connect();
         try {
             const cita = await validateGroomerOwnership(req.params.citaId, req.user.id);
             const ficha = await GroomingRecord.getByCitaId(cita.id);
 
             if (!ficha) {
                 return res.status(400).json({ success: false, error: 'Debes completar la ficha tecnica antes de finalizar' });
-            }
-
-            if (!ficha.insumos_texto || !ficha.insumos_texto.trim()) {
-                return res.status(400).json({ success: false, error: 'Debes registrar los insumos utilizados' });
             }
 
             if (!ficha.foto_antes_path) {
@@ -1311,28 +1482,70 @@ const ScheduleController = {
                 return res.status(400).json({ success: false, error: 'Debes subir la foto del despues para finalizar' });
             }
 
-            const actualizada = await Slot.update(cita.id, {
-                estado: 'finalizada',
-                notas: req.body?.notas_cierre || cita.notas
-            });
+            if (!Array.isArray(req.body?.insumos) || req.body.insumos.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Debes registrar el control de insumos antes de finalizar'
+                });
+            }
 
-            await appendNotification({
-                tipo: 'servicio_finalizado',
-                cita_id: cita.id,
-                cliente: cita.cliente_nombre,
-                mascota: cita.mascota_nombre,
-                groomer: cita.groomer_nombre,
-                mensaje: 'La mascota puede ser recogida',
-                recomendaciones: ficha.recomendaciones || null
+            await client.query('BEGIN');
+            const insumosProcesados = await ServiceInsumo.confirmarUso(client, {
+                citaId: cita.id,
+                items: req.body?.insumos || []
             });
+            const resumenInsumos = buildInsumosResumen(insumosProcesados);
+
+            if (resumenInsumos) {
+                await client.query(`
+                    UPDATE fichas_grooming
+                    SET insumos_texto = COALESCE($1, insumos_texto),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE cita_id = $2
+                `, [resumenInsumos, cita.id]);
+            }
+
+            const actualizada = await client.query(`
+                UPDATE slots
+                SET estado = 'finalizada',
+                    notas = COALESCE($1, notas),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+                RETURNING *
+            `, [req.body?.notas_cierre || cita.notas, cita.id]);
+
+            await client.query('COMMIT');
+
+            try {
+                await appendNotification({
+                    tipo: 'servicio_finalizado',
+                    titulo: 'Servicio finalizado',
+                    cita_id: cita.id,
+                    cliente: cita.cliente_nombre,
+                    mascota: cita.mascota_nombre,
+                    groomer: cita.groomer_nombre,
+                    mensaje: 'La mascota puede ser recogida',
+                    recipient_user_id: cita.cliente_id,
+                    recipient_role: 4,
+                    email_to: cita.cliente_email || null,
+                    email_subject: 'Tu mascota esta lista para recoger',
+                    email_body: `El servicio de ${cita.mascota_nombre} fue finalizado. Ya puedes pasar por la mascota. ${ficha.recomendaciones ? `Recomendaciones: ${ficha.recomendaciones}` : ''}`,
+                    recomendaciones: ficha.recomendaciones || null
+                });
+            } catch (notificationError) {
+                console.error('No se pudo escribir la notificacion del servicio finalizado:', notificationError.message);
+            }
 
             res.json({
                 success: true,
                 message: 'Servicio finalizado exitosamente',
-                data: await Slot.getById(actualizada.id)
+                data: await Slot.getById(actualizada.rows[0].id)
             });
         } catch (error) {
+            await client.query('ROLLBACK');
             res.status(error.statusCode || 500).json({ success: false, error: error.message });
+        } finally {
+            client.release();
         }
     }
 };
