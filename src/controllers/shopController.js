@@ -19,10 +19,19 @@ const normalizeCartItems = (items = []) => {
         if (!map.has(id)) {
             map.set(id, {
                 id,
-                cantidad
+                cantidad,
+                precio_venta: Number(item.precio_venta || 0),
+                precio_unitario_snapshot: Number(item.precio_unitario_snapshot || item.precio_venta || 0)
             });
         } else {
-            map.get(id).cantidad += cantidad;
+            const current = map.get(id);
+            current.cantidad += cantidad;
+            if (!current.precio_venta && Number(item.precio_venta || 0) > 0) {
+                current.precio_venta = Number(item.precio_venta || 0);
+            }
+            if (!current.precio_unitario_snapshot && Number(item.precio_unitario_snapshot || item.precio_venta || 0) > 0) {
+                current.precio_unitario_snapshot = Number(item.precio_unitario_snapshot || item.precio_venta || 0);
+            }
         }
     });
 
@@ -235,6 +244,20 @@ const parsePromoProducts = (productosJson) => {
     } catch (_err) {
         return [];
     }
+};
+
+const parseItemsPayload = (payload) => {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+    if (typeof payload === 'string') {
+        try {
+            const parsed = JSON.parse(payload);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_err) {
+            return [];
+        }
+    }
+    return [];
 };
 
 const calcularDescuentoPromociones = (items = [], promociones = []) => {
@@ -628,7 +651,12 @@ const ShopController = {
     validarCupon: async (req, res) => {
         try {
             const codigo = req.body?.codigo_cupon || req.query?.codigo_cupon || req.body?.codigo || req.query?.codigo;
-            const items = normalizeCartItems(req.body?.items || []);
+            const rawItems = req.body?.items
+                || req.query?.items
+                || req.body?.items_json
+                || req.query?.items_json
+                || [];
+            const items = normalizeCartItems(parseItemsPayload(rawItems));
             if (!codigo) {
                 return res.json({
                     success: true,
